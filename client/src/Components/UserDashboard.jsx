@@ -16,7 +16,7 @@ export default function UserDashboard() {
   const inAppMessagesRef = useRef([]); // history of in-app messages
   const fetchIntervalRef = useRef(null);
 
-  // Notification banner text (for upcoming meeting)
+  // Notification banner text (for upcoming meeting OR booking success)
   const [banner, setBanner] = useState("");
 
   // Audio ref for audible alert (place /notification.mp3 in client/public)
@@ -30,6 +30,18 @@ export default function UserDashboard() {
       audioRef.current.volume = 1.0;
     } catch (e) {
       console.warn("Audio init failed:", e);
+    }
+
+    // restore notifyEnabled from localStorage if permission is still granted
+    try {
+      if (typeof window !== "undefined" && "Notification" in window) {
+        const stored = window.localStorage?.getItem("notifyEnabled");
+        if (stored === "true" && Notification.permission === "granted") {
+          setNotifyEnabled(true);
+        }
+      }
+    } catch (e) {
+      console.warn("restore notifyEnabled failed:", e);
     }
   }, []);
 
@@ -354,7 +366,7 @@ export default function UserDashboard() {
     });
   };
 
-  // ------------------ NEW: cancel booking ------------------
+  // ------------------ CANCEL booking ------------------
   const cancelBooking = async (roomId, booking) => {
     const bookingDate = getBookingDate(booking);
     const bookingStart = getBookingStart(booking);
@@ -395,7 +407,7 @@ export default function UserDashboard() {
     }
   };
 
-  // ------------------ Booking logic (unchanged) ------------------
+  // ------------------ Booking logic ------------------
   const validateTimes = () => {
     if (!date || !start || !end) {
       alert("Please pick date, start time and end time.");
@@ -468,6 +480,19 @@ export default function UserDashboard() {
       const data = await res.json();
       setMessage(data.message || JSON.stringify(data));
       fetchRooms();
+
+      // 🔔 NEW: banner + sound immediately after booking completed
+      const bannerText = `✅ Booking confirmed for ${date} from ${start} to ${end}${
+        selectedRoom ? ` (Room ID: ${selectedRoom})` : ""
+      }`;
+      setBanner(bannerText);
+      // play sound (best-effort)
+      await playAlertSound();
+      // auto-hide after 8s (only if banner wasn't changed by something else)
+      setTimeout(() => {
+        setBanner((cur) => (cur === bannerText ? "" : cur));
+      }, 8000);
+      // 🔔 END NEW
     } catch (err) {
       console.error("Error booking room:", err);
       setMessage("Error booking room. Try again.");
@@ -478,6 +503,14 @@ export default function UserDashboard() {
   const handleEnableNotifications = async () => {
     const ok = await requestNotificationPermission();
     setNotifyEnabled(ok);
+
+    // persist in localStorage
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem("notifyEnabled", ok ? "true" : "false");
+      }
+    } catch {}
+
     if (ok) {
       setMessage("Notifications enabled (sound unlocking attempt).");
       // Attempt to unlock audio by playing and pausing immediately (user gesture)
@@ -502,6 +535,13 @@ export default function UserDashboard() {
     setNotifyEnabled(false);
     clearAllScheduledTimers();
     setMessage("Notifications disabled.");
+
+    // persist disable as well
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem("notifyEnabled", "false");
+      }
+    } catch {}
   };
 
   // small helper to display fallback-friendly values in UI
