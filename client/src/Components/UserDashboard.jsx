@@ -16,6 +16,9 @@ export default function UserDashboard() {
   const inAppMessagesRef = useRef([]); // history of in-app messages
   const fetchIntervalRef = useRef(null);
 
+  // Notification banner text (for upcoming meeting)
+  const [banner, setBanner] = useState("");
+
   // Audio ref for audible alert (place /notification.mp3 in client/public)
   const audioRef = useRef(null);
 
@@ -234,6 +237,8 @@ export default function UserDashboard() {
   const playAlertSound = async () => {
     try {
       if (audioRef.current) {
+        // always start from the beginning of the audio
+        audioRef.current.currentTime = 0;
         // Attempt to play; if blocked, catch and continue silently
         await audioRef.current.play().catch((err) => {
           // may be blocked if not unlocked by a user gesture
@@ -260,6 +265,14 @@ export default function UserDashboard() {
     const ok = showBrowserNotification(title, body);
     // Play sound (best-effort). If blocked, nothing breaks.
     await playAlertSound();
+
+    // 🔔 Show banner on page as well
+    const bannerText = `🔔 Upcoming meeting in ${leadMinutes} min — ${room.name} • ${bDate} ${bStart}–${bEnd}`;
+    setBanner(bannerText);
+    // Auto-hide banner after 10 seconds
+    setTimeout(() => {
+      setBanner((cur) => (cur === bannerText ? "" : cur));
+    }, 10000);
 
     if (!ok) {
       showInAppMessage(`🔔 ${title}: ${bDate} ${bStart}`);
@@ -341,6 +354,47 @@ export default function UserDashboard() {
     });
   };
 
+  // ------------------ NEW: cancel booking ------------------
+  const cancelBooking = async (roomId, booking) => {
+    const bookingDate = getBookingDate(booking);
+    const bookingStart = getBookingStart(booking);
+    const bookingEnd = getBookingEnd(booking);
+
+    if (!bookingDate || !bookingStart || !bookingEnd) {
+      alert("Unable to cancel: booking date/time missing.");
+      return;
+    }
+
+    const confirmCancel = window.confirm(
+      `Do you really want to cancel your booking in this room on ${bookingDate} from ${bookingStart} to ${bookingEnd}?`
+    );
+    if (!confirmCancel) return;
+
+    setMessage("");
+
+    try {
+      const res = await fetch("http://localhost:5000/api/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomId,
+          user: booking.user,
+          date: bookingDate,
+          start: bookingStart,
+          end: bookingEnd,
+        }),
+      });
+
+      const data = await res.json();
+      setMessage(data.message || "Booking cancelled.");
+      // refresh rooms so UI updates
+      fetchRooms();
+    } catch (err) {
+      console.error("Error cancelling booking:", err);
+      setMessage("Error cancelling booking. Try again.");
+    }
+  };
+
   // ------------------ Booking logic (unchanged) ------------------
   const validateTimes = () => {
     if (!date || !start || !end) {
@@ -420,7 +474,7 @@ export default function UserDashboard() {
     }
   };
 
-  // ------------------ UI ------------------
+  // ------------------ UI ------------------  
   const handleEnableNotifications = async () => {
     const ok = await requestNotificationPermission();
     setNotifyEnabled(ok);
@@ -429,10 +483,13 @@ export default function UserDashboard() {
       // Attempt to unlock audio by playing and pausing immediately (user gesture)
       try {
         if (!audioRef.current) audioRef.current = new Audio("/notification.mp3");
-        await audioRef.current.play().then(() => {
-          audioRef.current.pause();
-          audioRef.current.currentTime = 0;
-        }).catch(() => {});
+        await audioRef.current
+          .play()
+          .then(() => {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+          })
+          .catch(() => {});
       } catch (e) {
         // ignore
       }
@@ -454,7 +511,44 @@ export default function UserDashboard() {
 
   return (
     <div style={{ textAlign: "center", marginTop: "30px" }}>
-      <h1>Room Booking</h1>
+      {/* 🔔 Notification banner */}
+      {banner && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 999,
+            padding: "10px 16px",
+            background: "#fff3cd",
+            color: "#856404",
+            borderBottom: "1px solid #ffeeba",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontSize: 14,
+          }}
+        >
+          <span>{banner}</span>
+          <button
+            onClick={() => setBanner("")}
+            style={{
+              marginLeft: 12,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 16,
+              fontWeight: "bold",
+              color: "#856404",
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <h1 style={{ marginTop: banner ? "60px" : "30px" }}>Room Booking</h1>
 
       {/* Notification controls */}
       <div style={{ marginBottom: 12 }}>
@@ -567,8 +661,34 @@ export default function UserDashboard() {
                   <strong>Confirmed bookings:</strong>
                   <ul>
                     {r.bookings.map((b, i) => (
-                      <li key={i}>
-                        {renderDate(b)} — {renderStart(b)} to {renderEnd(b)} — by {b.user}
+                      <li
+                        key={i}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <span>
+                          {renderDate(b)} — {renderStart(b)} to {renderEnd(b)} — by {b.user}
+                        </span>
+                        {b.user === user && (
+                          <button
+                            onClick={() => cancelBooking(r.id, b)}
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: 12,
+                              cursor: "pointer",
+                              borderRadius: 4,
+                              border: "1px solid #cc0000",
+                              background: "#ffe5e5",
+                              color: "#cc0000",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

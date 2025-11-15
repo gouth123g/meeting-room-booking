@@ -78,8 +78,7 @@ app.post("/api/book", (req, res) => {
       });
     }
 
-    // All rooms are booked -> add to global waiting of first room? keep behaviour: push to first room's waitingList
-    // Here we push to the first room's waiting list to keep the request stored (you can adapt as needed)
+    // All rooms are booked -> add to global waiting of first room
     rooms[0].waitingList.push({ ...bookingObj, created_at: new Date().toISOString(), base_priority: 1 });
     return res.json({
       ok: false,
@@ -97,6 +96,46 @@ app.get("/api/rooms/summary", (req, res) => {
   const booked = rooms.filter((r) => r.bookings.length > 0).length;
   const available = total - booked;
   res.json({ total, booked, available });
+});
+
+// ✅ Cancel a booking
+app.post("/api/cancel", (req, res) => {
+  try {
+    const { roomId, user, date, start, end } = req.body;
+
+    if (!roomId || !user || !date || !start || !end) {
+      return res.status(400).json({
+        ok: false,
+        message: "Missing required fields. Provide roomId, user, date, start, end.",
+      });
+    }
+
+    const idNum = isNaN(Number(roomId)) ? roomId : Number(roomId);
+    const room = rooms.find((r) => r.id === idNum);
+    if (!room) {
+      return res.status(404).json({ ok: false, message: "Room not found" });
+    }
+
+    const before = room.bookings.length;
+    room.bookings = room.bookings.filter(
+      (b) =>
+        !(
+          b.user === user &&
+          b.date === date &&
+          b.start === start &&
+          b.end === end
+        )
+    );
+
+    if (room.bookings.length === before) {
+      return res.json({ ok: false, message: "No matching booking to cancel." });
+    }
+
+    return res.json({ ok: true, message: "Booking cancelled successfully." });
+  } catch (err) {
+    console.error("Cancel error", err);
+    return res.status(500).json({ ok: false, message: "Server error" });
+  }
 });
 
 app.listen(5000, () => console.log("✅ Server running on port 5000"));
