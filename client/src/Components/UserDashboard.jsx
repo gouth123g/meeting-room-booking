@@ -24,7 +24,6 @@ export default function UserDashboard() {
 
   useEffect(() => {
     try {
-      // initialize audio (do not autoplay). This will be unlocked on user gesture.
       audioRef.current = new Audio("/notification.mp3");
       audioRef.current.preload = "auto";
       audioRef.current.volume = 1.0;
@@ -82,9 +81,7 @@ export default function UserDashboard() {
   };
 
   const combineDateTimeToDateObj = (dateStr, timeStr) => {
-    // dateStr: "YYYY-MM-DD", timeStr: "HH:MM"
     if (!dateStr || !timeStr) return null;
-    // Build a local ISO-like string: "YYYY-MM-DDTHH:MM:00"
     const [hh, mm] = timeStr.split(":");
     const iso = `${dateStr}T${hh.padStart(2, "0")}:${mm.padStart(2, "0")}:00`;
     const d = new Date(iso);
@@ -92,22 +89,16 @@ export default function UserDashboard() {
     return d;
   };
 
-  // Normalize a time value which may be:
-  // - "HH:MM"
-  // - ISO datetime "2025-11-14T10:30:00Z" or "2025-11-14T10:30:00"
-  // - timestamp number (ms)
-  // Return string "HH:MM" in local time (or original if it already was HH:MM).
+  // Normalize a time value
   const normalizeTimeString = (val) => {
     if (!val && val !== 0) return null;
     if (typeof val === "string") {
-      // if already "HH:MM"
       if (/^\d{1,2}:\d{2}$/.test(val.trim())) {
         const parts = val.trim().split(":");
         const hh = String(parseInt(parts[0], 10)).padStart(2, "0");
         const mm = String(parseInt(parts[1], 10)).padStart(2, "0");
         return `${hh}:${mm}`;
       }
-      // try ISO parse
       const parsed = Date.parse(val);
       if (!Number.isNaN(parsed)) {
         const d = new Date(parsed);
@@ -115,7 +106,6 @@ export default function UserDashboard() {
         const mm = String(d.getMinutes()).padStart(2, "0");
         return `${hh}:${mm}`;
       }
-      // fallback: try to extract HH:MM with regex
       const m = val.match(/(\d{1,2}):(\d{2})/);
       if (m) {
         const hh = String(parseInt(m[1], 10)).padStart(2, "0");
@@ -124,7 +114,6 @@ export default function UserDashboard() {
       }
       return null;
     } else if (typeof val === "number") {
-      // ms timestamp
       const d = new Date(val);
       if (!isNaN(d.getTime())) {
         const hh = String(d.getHours()).padStart(2, "0");
@@ -143,7 +132,6 @@ export default function UserDashboard() {
       b.bookingDate ??
       b.requestedDate ??
       b.day ??
-      // if object holds datetime in a single field, try to extract date
       (typeof b.startDatetime === "string" && b.startDatetime.split("T")[0]) ??
       null
     );
@@ -158,13 +146,12 @@ export default function UserDashboard() {
       b.from,
       b.startDatetime,
       b.start_datetime,
-      b.start_at,
+      b.start_at
     ];
     for (const c of candidates) {
       const t = normalizeTimeString(c);
       if (t) return t;
     }
-    // If there's a single datetime in a field called 'datetime' or 'when'
     const fallbacks = [b.datetime, b.when, b.startAt, b.start_at];
     for (const f of fallbacks) {
       const t = normalizeTimeString(f);
@@ -181,7 +168,7 @@ export default function UserDashboard() {
       b.to,
       b.endDatetime,
       b.end_datetime,
-      b.end_at,
+      b.end_at
     ];
     for (const c of candidates) {
       const t = normalizeTimeString(c);
@@ -198,15 +185,9 @@ export default function UserDashboard() {
   // ------------------ Notification utilities ------------------
   const requestNotificationPermission = async () => {
     try {
-      if (!("Notification" in window)) {
-        // browser doesn't support notifications
-        return false;
-      }
+      if (!("Notification" in window)) return false;
       if (Notification.permission === "granted") return true;
-      if (Notification.permission === "denied") {
-        // user explicitly denied — don't nag, fallback to in-app messages
-        return false;
-      }
+      if (Notification.permission === "denied") return false;
       const permission = await Notification.requestPermission();
       return permission === "granted";
     } catch (e) {
@@ -220,8 +201,7 @@ export default function UserDashboard() {
       if ("Notification" in window && Notification.permission === "granted") {
         const options = {
           body,
-          silent: true, // keep browser notification silent; we play audio separately
-          // icon: '/favicon.ico' // optional icon in public folder
+          silent: true
         };
         const notif = new Notification(title, options);
         notif.onclick = () => {
@@ -238,22 +218,18 @@ export default function UserDashboard() {
   };
 
   const showInAppMessage = (text) => {
-    // Non-intrusive fallback: update message for a short time (no alert)
     inAppMessagesRef.current.push({ text, time: Date.now() });
     setMessage(text);
     setTimeout(() => {
       setMessage((cur) => (cur === text ? "" : cur));
-    }, 6000); // auto-hide after 6s
+    }, 6000);
   };
 
   const playAlertSound = async () => {
     try {
       if (audioRef.current) {
-        // always start from the beginning of the audio
         audioRef.current.currentTime = 0;
-        // Attempt to play; if blocked, catch and continue silently
         await audioRef.current.play().catch((err) => {
-          // may be blocked if not unlocked by a user gesture
           console.warn("Audio play blocked:", err);
         });
       }
@@ -275,13 +251,10 @@ export default function UserDashboard() {
     const body = `${booking.user} • ${bDate} ${bStart}–${bEnd} (in ${leadMinutes} min)`;
 
     const ok = showBrowserNotification(title, body);
-    // Play sound (best-effort). If blocked, nothing breaks.
     await playAlertSound();
 
-    // 🔔 Show banner on page as well
     const bannerText = `🔔 Upcoming meeting in ${leadMinutes} min — ${room.name} • ${bDate} ${bStart}–${bEnd}`;
     setBanner(bannerText);
-    // Auto-hide banner after 10 seconds
     setTimeout(() => {
       setBanner((cur) => (cur === bannerText ? "" : cur));
     }, 10000);
@@ -303,26 +276,22 @@ export default function UserDashboard() {
   };
 
   const scheduleNotificationsForUserBookings = () => {
-    // Cancel existing timers and re-schedule
     clearAllScheduledTimers();
 
     if (!notifyEnabled) return;
-    if (!user) return; // need username to filter bookings
+    if (!user) return;
 
     const now = Date.now();
     const leadMs = Math.max(0, Number(leadMinutes) || 0) * 60 * 1000;
 
     rooms.forEach((room) => {
       (room.bookings || []).forEach((b) => {
-        // only schedule for bookings that belong to current logged-in user
         if (!b.user || b.user !== user) return;
 
-        // use getters (they already handle alternate keys)
         const startStr = getBookingStart(b);
         const dateStr = getBookingDate(b);
 
         if (!dateStr || !startStr) {
-          // can't schedule notification for this booking because time or date is missing
           console.warn("Skipping schedule: booking missing date or start:", b);
           return;
         }
@@ -337,10 +306,9 @@ export default function UserDashboard() {
         const notifyAt = startMs - leadMs;
         const timeUntilNotify = notifyAt - now;
 
-        // Only schedule if notify time is in the future
         if (timeUntilNotify > 0) {
           const bookingKey = `${room.id}__${dateStr}__${startStr}__${b.user}`;
-          const MAX_TIMEOUT = 2147483647; // ~24.8 days
+          const MAX_TIMEOUT = 2147483647;
           const timeoutToUse = Math.min(timeUntilNotify, MAX_TIMEOUT);
 
           if (timersRef.current[bookingKey]) {
@@ -351,7 +319,6 @@ export default function UserDashboard() {
 
           const tid = setTimeout(() => {
             try {
-              // call notifyUser (async). no need to await here.
               notifyUser(b, room);
             } catch (e) {
               console.error("notifyUser error:", e);
@@ -366,7 +333,7 @@ export default function UserDashboard() {
     });
   };
 
-  // ------------------ CANCEL booking ------------------
+  // ------------------ CANCEL confirmed booking ------------------
   const cancelBooking = async (roomId, booking) => {
     const bookingDate = getBookingDate(booking);
     const bookingStart = getBookingStart(booking);
@@ -393,17 +360,56 @@ export default function UserDashboard() {
           user: booking.user,
           date: bookingDate,
           start: bookingStart,
-          end: bookingEnd,
-        }),
+          end: bookingEnd
+        })
       });
 
       const data = await res.json();
       setMessage(data.message || "Booking cancelled.");
-      // refresh rooms so UI updates
       fetchRooms();
     } catch (err) {
       console.error("Error cancelling booking:", err);
       setMessage("Error cancelling booking. Try again.");
+    }
+  };
+
+  // ------------------ CANCEL waiting booking (NEW) ------------------
+  const cancelWaiting = async (roomId, waiting) => {
+    const wDate = getBookingDate(waiting);
+    const wStart = getBookingStart(waiting);
+    const wEnd = getBookingEnd(waiting);
+
+    if (!wDate || !wStart || !wEnd) {
+      alert("Unable to cancel waiting entry: date/time missing.");
+      return;
+    }
+
+    const confirmCancel = window.confirm(
+      `Leave waiting list for this room on ${wDate} from ${wStart} to ${wEnd}?`
+    );
+    if (!confirmCancel) return;
+
+    setMessage("");
+
+    try {
+      const res = await fetch("http://localhost:5000/api/cancel-waiting", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomId,
+          user: waiting.user,
+          date: wDate,
+          start: wStart,
+          end: wEnd
+        })
+      });
+
+      const data = await res.json();
+      setMessage(data.message || "Removed from waiting list.");
+      fetchRooms();
+    } catch (err) {
+      console.error("Error cancelling waiting entry:", err);
+      setMessage("Error cancelling waiting entry. Try again.");
     }
   };
 
@@ -440,7 +446,6 @@ export default function UserDashboard() {
       const eMinutes = timeToMinutes(end);
 
       const existing = (room?.bookings || []).find((b) => {
-        // use getBookingDate/getBookingStart when comparing to be robust
         if (getBookingDate(b) !== date) return false;
         const bStart = getBookingStart(b);
         const bEnd = getBookingEnd(b);
@@ -474,37 +479,32 @@ export default function UserDashboard() {
           user,
           date,
           start,
-          end,
-        }),
+          end
+        })
       });
       const data = await res.json();
       setMessage(data.message || JSON.stringify(data));
       fetchRooms();
 
-      // 🔔 NEW: banner + sound immediately after booking completed
       const bannerText = `✅ Booking confirmed for ${date} from ${start} to ${end}${
         selectedRoom ? ` (Room ID: ${selectedRoom})` : ""
       }`;
       setBanner(bannerText);
-      // play sound (best-effort)
       await playAlertSound();
-      // auto-hide after 8s (only if banner wasn't changed by something else)
       setTimeout(() => {
         setBanner((cur) => (cur === bannerText ? "" : cur));
       }, 8000);
-      // 🔔 END NEW
     } catch (err) {
       console.error("Error booking room:", err);
       setMessage("Error booking room. Try again.");
     }
   };
 
-  // ------------------ UI ------------------  
+  // ------------------ UI ------------------
   const handleEnableNotifications = async () => {
     const ok = await requestNotificationPermission();
     setNotifyEnabled(ok);
 
-    // persist in localStorage
     try {
       if (typeof window !== "undefined" && window.localStorage) {
         window.localStorage.setItem("notifyEnabled", ok ? "true" : "false");
@@ -513,7 +513,6 @@ export default function UserDashboard() {
 
     if (ok) {
       setMessage("Notifications enabled (sound unlocking attempt).");
-      // Attempt to unlock audio by playing and pausing immediately (user gesture)
       try {
         if (!audioRef.current) audioRef.current = new Audio("/notification.mp3");
         await audioRef.current
@@ -523,9 +522,7 @@ export default function UserDashboard() {
             audioRef.current.currentTime = 0;
           })
           .catch(() => {});
-      } catch (e) {
-        // ignore
-      }
+      } catch {}
     } else {
       setMessage("Notifications unavailable — using in-app messages only.");
     }
@@ -535,8 +532,6 @@ export default function UserDashboard() {
     setNotifyEnabled(false);
     clearAllScheduledTimers();
     setMessage("Notifications disabled.");
-
-    // persist disable as well
     try {
       if (typeof window !== "undefined" && window.localStorage) {
         window.localStorage.setItem("notifyEnabled", "false");
@@ -544,7 +539,6 @@ export default function UserDashboard() {
     } catch {}
   };
 
-  // small helper to display fallback-friendly values in UI
   const renderDate = (b) => getBookingDate(b) ?? "—";
   const renderStart = (b) => getBookingStart(b) ?? "—";
   const renderEnd = (b) => getBookingEnd(b) ?? "—";
@@ -567,7 +561,7 @@ export default function UserDashboard() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            fontSize: 14,
+            fontSize: 14
           }}
         >
           <span>{banner}</span>
@@ -580,7 +574,7 @@ export default function UserDashboard() {
               cursor: "pointer",
               fontSize: 16,
               fontWeight: "bold",
-              color: "#856404",
+              color: "#856404"
             }}
           >
             ×
@@ -671,7 +665,7 @@ export default function UserDashboard() {
           background: "#007bff",
           color: "white",
           border: "none",
-          cursor: "pointer",
+          cursor: "pointer"
         }}
       >
         Book Room
@@ -691,7 +685,7 @@ export default function UserDashboard() {
               margin: "20px auto",
               border: "1px solid #e0e0e0",
               padding: 12,
-              borderRadius: 8,
+              borderRadius: 8
             }}
           >
             <strong>{r.name}</strong>
@@ -707,7 +701,7 @@ export default function UserDashboard() {
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
-                          gap: 8,
+                          gap: 8
                         }}
                       >
                         <span>
@@ -723,7 +717,7 @@ export default function UserDashboard() {
                               borderRadius: 4,
                               border: "1px solid #cc0000",
                               background: "#ffe5e5",
-                              color: "#cc0000",
+                              color: "#cc0000"
                             }}
                           >
                             Cancel
@@ -742,8 +736,35 @@ export default function UserDashboard() {
                   <strong>Waiting list:</strong>
                   <ul>
                     {r.waitingList.map((w, i) => (
-                      <li key={i}>
-                        {w.user} waiting for {renderDate(w)} {renderStart(w)}-{renderEnd(w)}
+                      <li
+                        key={i}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 8
+                        }}
+                      >
+                        <span>
+                          {w.user} waiting for {renderDate(w)} {renderStart(w)}-
+                          {renderEnd(w)}
+                        </span>
+                        {w.user === user && (
+                          <button
+                            onClick={() => cancelWaiting(r.id, w)}
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: 12,
+                              cursor: "pointer",
+                              borderRadius: 4,
+                              border: "1px solid #666",
+                              background: "#f0f0f0",
+                              color: "#333"
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

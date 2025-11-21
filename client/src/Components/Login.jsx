@@ -26,7 +26,10 @@ const Login = () => {
       navigate("/admin");
     } else if (email === "user@site.com" && password === "user123") {
       navigate("/user");
-    } else {
+    }
+     else if(email === "user1@site.com" && password === "user1234"){
+            navigate("/user")
+     } else {
       alert("Invalid credentials");
     }
   };
